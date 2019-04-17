@@ -1,0 +1,49 @@
+-module(logger).
+-export([start/0, stop/1]).
+
+start() ->
+    spawn_link(fun() ->init() end).
+    
+stop(Logger) ->
+    Logger ! max_queue_size,
+    Logger ! stop.
+    
+init() ->
+    loop(vect:clock(), [], 0).
+    
+loop(Clock, Queue, MaxQ) ->
+    receive
+        {log, From, Time, Msg} ->
+            io:format("log: Adding into Queue ~w ~w ~p~n", [Time, From, Msg]),
+            NewClock = vect:update(From, Time, Clock),
+            io:format("log: Current Clock  ~w~n", [NewClock]),         
+            NewQueue = log(sort({Time, From, Msg},Queue), NewClock),            
+            loop(NewClock, NewQueue, max(length(NewQueue),MaxQ));
+        max_queue_size ->
+            io:format("log: Max Queue Size  ~w~n", [MaxQ+1]);
+        stop ->
+            ok
+    end.
+
+log(Queue, Clock) -> log(Queue, Clock, []).   
+ 
+log([], _Clock, NewQueue) -> NewQueue;
+log([{Time, From, Msg}|T], Clock, NewQueue) ->
+%    case whereis(test) of
+%        undefined -> ok;
+%        _ -> test! Msg
+%    end,
+    case vect:safe(Time, Clock) of
+        true -> 
+            io:format("log: ~w ~w ~p~n", [Time, From, Msg]),
+            log(T, Clock, NewQueue);
+        false -> 
+            log(T, Clock, NewQueue++[{Time, From, Msg}])
+    end.
+
+sort(Log, []) -> [Log];    
+sort({Time1, _From1, _Msg1} = Log1, [{Time2, _From2, _Msg2} = Log2| T]=SortedQ) ->
+    case vect:leq(Time1, Time2) of
+        true -> [Log1|SortedQ];
+        false ->[Log2] ++ sort(Log1, T)
+    end.
